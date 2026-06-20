@@ -6,6 +6,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.application.message.message_app_service import MessageAppService
 from app.application.upload.upload_app_service import UploadAppService
 from app.interfaces.websocket.ws_routes import ConnectionManager, _is_safe_upload_id
+from app.infrastructure.database.session import transactional_session
 
 logger = logging.getLogger("hmp_ws_service")
 
@@ -76,11 +77,10 @@ class WebSocketHandler:
                     }, ensure_ascii=False))
                 else:
                     try:
-                        from app.infrastructure.database.session import SessionLocal
-                        from app.infrastructure.database.repositories import SQLMessageRepository
+                        from app.infrastructure.database import SQLMessageRepository
                         
                         # 使用临时的短生命周期 session 写入数据库，防止长连接挂载导致连接池耗尽
-                        with SessionLocal() as db:
+                        with transactional_session() as db:
                             repo = SQLMessageRepository(db)
                             temp_service = MessageAppService(repo, self.msg_service.mq_adapter)
                             msg = await temp_service.send_message(sender=self.client_id, receiver=receiver, content=content)
@@ -115,9 +115,8 @@ class WebSocketHandler:
                 
                 # 新增同名文件排重校验
                 try:
-                    from app.infrastructure.database.session import SessionLocal
-                    from app.infrastructure.database.repositories import SQLUploadedFileRepository
-                    with SessionLocal() as db:
+                    from app.infrastructure.database import SQLUploadedFileRepository
+                    with transactional_session() as db:
                         repo = SQLUploadedFileRepository(db)
                         if repo.find_by_filename(filename):
                             await self.websocket.send_text(json.dumps({
@@ -186,10 +185,9 @@ class WebSocketHandler:
                     file_size_mb = round(file_size_bytes / (1024 * 1024), 2)
                     
                     # 将上传记录写入数据库中
-                    from app.infrastructure.database.session import SessionLocal
-                    from app.infrastructure.database.repositories import SQLUploadedFileRepository
+                    from app.infrastructure.database import SQLUploadedFileRepository
                     from app.domain.upload.entities import UploadedFile
-                    with SessionLocal() as db:
+                    with transactional_session() as db:
                         repo = SQLUploadedFileRepository(db)
                         uploaded_file = UploadedFile(
                             filename=safe_name,

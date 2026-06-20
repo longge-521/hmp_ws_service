@@ -1,32 +1,38 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from app.application.message.message_app_service import MessageAppService
 
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
-from app.infrastructure.database.session import get_db
-from app.infrastructure.database.repositories import SQLMessageRepository
+
+from app.application.message.message_app_service import MessageAppService
 from app.infrastructure.auth import verify_token
+from app.infrastructure.database import SQLMessageRepository
+from app.infrastructure.database.session import get_db
 
 logger = logging.getLogger("hmp_ws_service")
 router = APIRouter(prefix="/api/messages", tags=["Messages"], dependencies=[Depends(verify_token)])
 
 from pydantic import BaseModel, Field
 
+
 class MessageSendRequest(BaseModel):
     sender: str = Field("system", max_length=50, description="发送者 ID")
     receiver: str = Field(..., min_length=1, max_length=50, description="接收者 ID")
     content: str = Field(..., min_length=1, max_length=1000, description="站内信内容")
 
-def get_message_service(request: Request, db: Session = Depends(get_db)) -> MessageAppService:
+
+def get_message_service(request: Request,
+                        db: Session = Depends(get_db)) -> MessageAppService:
     repo = SQLMessageRepository(db)
     return MessageAppService(repo, request.app.state.mq_adapter)
 
+
 @router.post("/send")
-async def send_message_api(request_data: MessageSendRequest, service: MessageAppService = Depends(get_message_service)):
+async def send_message_api(request_data: MessageSendRequest,
+                           service: MessageAppService = Depends(get_message_service)):
     try:
         msg = await service.send_message(
-            request_data.sender, 
-            request_data.receiver, 
+            request_data.sender,
+            request_data.receiver,
             request_data.content
         )
         return {"status": "success", "message": f"站内信已入库 (id={msg.id})", "id": msg.id}
@@ -34,8 +40,10 @@ async def send_message_api(request_data: MessageSendRequest, service: MessageApp
         logger.error(f"Failed to send site message API: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to send site message: {e}")
 
+
 @router.get("")
-async def get_messages_api(receiver: str = Query(...), status: str = Query("all"), service: MessageAppService = Depends(get_message_service)):
+async def get_messages_api(receiver: str = Query(...), status: str = Query("all"),
+                           service: MessageAppService = Depends(get_message_service)):
     try:
         messages = await service.get_messages(receiver, status)
         result = []
@@ -55,6 +63,7 @@ async def get_messages_api(receiver: str = Query(...), status: str = Query("all"
         logger.error(f"Failed to fetch site messages API: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch site messages")
 
+
 @router.post("/{message_id}/read")
 async def mark_as_read_api(message_id: int, service: MessageAppService = Depends(get_message_service)):
     try:
@@ -68,12 +77,13 @@ async def mark_as_read_api(message_id: int, service: MessageAppService = Depends
         logger.error(f"Failed to update message status API: {e}")
         raise HTTPException(status_code=500, detail="Failed to update message status")
 
+
 @router.post("/read-all")
-async def mark_all_as_read_api(receiver: str = Query(...), service: MessageAppService = Depends(get_message_service)):
+async def mark_all_as_read_api(receiver: str = Query(...),
+                               service: MessageAppService = Depends(get_message_service)):
     try:
         await service.mark_all_as_read(receiver)
         return {"status": "success", "message": f"All messages for {receiver} marked as read"}
     except Exception as e:
         logger.error(f"Failed to mark all messages as read API: {e}")
         raise HTTPException(status_code=500, detail="Failed to mark all messages as read")
-

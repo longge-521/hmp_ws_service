@@ -21,10 +21,29 @@ def init_db():
     """初始化数据库表（如果不存在的话）"""
     Base.metadata.create_all(bind=engine)
 
+from contextlib import contextmanager
+
 def get_db():
-    """FastAPI 依赖注入：获取数据库连接 Session"""
+    """FastAPI 依赖注入：获取数据库连接 Session (具备自动事务提交/回滚保护)"""
     db = SessionLocal()
     try:
         yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+@contextmanager
+def transactional_session():
+    """具有自动事务控制（Commit/Rollback）的 Session 上下文管理器，适用于非 Web 请求场景如 WebSocket Handler 或后台任务"""
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

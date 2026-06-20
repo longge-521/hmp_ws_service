@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.infrastructure.database.session import get_db
-from app.infrastructure.database.repositories import SQLUploadedFileRepository
+from app.infrastructure.database import SQLUploadedFileRepository
 from app.infrastructure.database.models import UploadedFileORM
 from app.infrastructure.auth import verify_token
 
