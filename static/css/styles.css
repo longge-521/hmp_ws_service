@@ -24,27 +24,28 @@ body {
     font-family: var(--font-family);
     background: var(--bg-gradient);
     color: var(--text-main);
-    min-height: 100vh;
+    height: 100vh;
+    width: 100vw;
     display: flex;
     justify-content: center;
-    align-items: flex-start;
-    padding: 40px 20px;
-    overflow-y: auto;
+    align-items: stretch;
+    padding: 0;
+    overflow: hidden;
 }
 
 .dashboard {
     width: 100%;
-    max-width: 1200px;
+    height: 100%;
     display: grid;
-    grid-template-columns: 240px 1fr;
-    gap: 24px;
+    grid-template-columns: 260px 1fr;
+    gap: 0;
     background: var(--card-bg);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--card-border);
-    border-radius: 24px;
-    padding: 24px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
 }
 
 /* 侧边栏 */
@@ -53,7 +54,8 @@ body {
     flex-direction: column;
     gap: 32px;
     border-right: 1px solid var(--card-border);
-    padding-right: 20px;
+    padding: 24px 20px 24px 24px;
+    height: 100%;
 }
 
 .logo-area {
@@ -135,7 +137,21 @@ body {
     display: flex;
     flex-direction: column;
     gap: 20px;
-    min-height: 500px;
+    height: 100%;
+    padding: 24px;
+    overflow-y: auto;
+}
+
+/* 滚动条美化 */
+.content-area::-webkit-scrollbar {
+    width: 8px;
+}
+.content-area::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+}
+.content-area::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .panel-header {
