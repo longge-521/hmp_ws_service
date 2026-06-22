@@ -90,10 +90,15 @@ def test_audit_route_query_debounce():
         # 审计记录次数依然为 1，说明被过滤了
         assert mock_record.call_count == 1
         
-        # 3. 测试 QUERY_AUDIT_LOGS 被剔除自审计
-        # 无论 mock_debounce 结果如何，都不应该记录审计日志
+        # 3. 测试 QUERY_AUDIT_LOGS 支持正常拦截审计及防抖保护
         mock_record.reset_mock()
-        response_logs = client.get("/test-query-logs")
-        assert response_logs.status_code == 200
-        assert mock_record.call_count == 0
+        mock_debounce.return_value = False
+        response_logs1 = client.get("/test-query-logs")
+        assert response_logs1.status_code == 200
+        assert mock_record.call_count == 1  # 第一次，不防抖，正常记录
+        
+        mock_debounce.return_value = True
+        response_logs2 = client.get("/test-query-logs")
+        assert response_logs2.status_code == 200
+        assert mock_record.call_count == 1  # 第二次，高频重复被防抖，跳过写入
 

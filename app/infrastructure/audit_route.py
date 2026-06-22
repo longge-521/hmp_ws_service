@@ -19,10 +19,10 @@ class AuditLogRoute(APIRoute):
             resource_type = self.description
             
             # 仅拦截我们需要审计的动作范围，其他路由直接放行
-            # 注意：已移除 QUERY_AUDIT_LOGS 以防产生列表查询自身的审计死循环
+            # QUERY_AUDIT_LOGS 亦将通过 Redis 防抖来防止死循环暴增
             auditable_actions = {
                 "SEND_MESSAGE", "READ_MESSAGE", "READ_ALL_MESSAGES", "DELETE_FILE",
-                "QUERY_MESSAGES", "QUERY_UPLOADED_FILES"
+                "QUERY_MESSAGES", "QUERY_UPLOADED_FILES", "QUERY_AUDIT_LOGS"
             }
             if not action or action not in auditable_actions:
                 return await original_route_handler(request)
