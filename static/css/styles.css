@@ -551,3 +551,53 @@ button {
     color: var(--text-muted);
     line-height: 1.4;
 }
+
+/* 审计日志请求参数 Tooltip 气泡 */
+.tooltip-trigger {
+    position: relative;
+    cursor: help;
+}
+
+.tooltip-trigger::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%) scale(0.95);
+    background: rgba(17, 24, 39, 0.95);
+    border: 1px solid var(--card-border);
+    color: #34d399; /* 翡翠绿代码色 */
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    width: max-content;
+    max-width: 320px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 999;
+}
+
+.tooltip-trigger:hover::after {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+}
+
+/* 审计日志表格隔行变色 */
+tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.015);
+}
+
+/* 表格行 Hover 高亮过渡 */
+tbody tr {
+    transition: background-color 0.2s ease;
+}
+
+tbody tr:hover {
+    background: rgba(255, 255, 255, 0.035) !important;
+}
+
