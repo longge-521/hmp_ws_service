@@ -19,7 +19,11 @@ class AuditLogRoute(APIRoute):
             resource_type = self.description
             
             # 仅拦截我们需要审计的动作范围，其他路由直接放行
-            auditable_actions = {"SEND_MESSAGE", "READ_MESSAGE", "READ_ALL_MESSAGES", "DELETE_FILE"}
+            # 注意：已移除 QUERY_AUDIT_LOGS 以防产生列表查询自身的审计死循环
+            auditable_actions = {
+                "SEND_MESSAGE", "READ_MESSAGE", "READ_ALL_MESSAGES", "DELETE_FILE",
+                "QUERY_MESSAGES", "QUERY_UPLOADED_FILES"
+            }
             if not action or action not in auditable_actions:
                 return await original_route_handler(request)
             
@@ -36,22 +40,55 @@ class AuditLogRoute(APIRoute):
             if action == "READ_ALL_MESSAGES":
                 operator = request.query_params.get("receiver")
                 
-            # 3. 发送站内信时，安全备份 Request Body 提取发送者作为操作者
-            if action == "SEND_MESSAGE" and request.method == "POST":
+            # 通用提取参数与备份 Body
+            request_params = {}
+            if request.path_params:
+                request_params["path"] = dict(request.path_params)
+            if request.query_params:
+                query_dict = dict(request.query_params)
+                if "token" in query_dict:
+                    query_dict["token"] = "******"
+                request_params["query"] = query_dict
+                
+            if request.method in ("POST", "PUT", "PATCH"):
                 try:
                     body_bytes = await request.body()
                     async def receive():
                         return {"type": "http.request", "body": body_bytes, "more_body": False}
                     request._receive = receive
                     
-                    req_json = json.loads(body_bytes.decode("utf-8"))
-                    operator = req_json.get("sender")
+                    if body_bytes:
+                        try:
+                            body_json = json.loads(body_bytes.decode("utf-8"))
+                            request_params["body"] = body_json
+                            # 如果是发送站内信，提取发送者作为操作者
+                            if action == "SEND_MESSAGE" and isinstance(body_json, dict):
+                                operator = body_json.get("sender")
+                        except Exception:
+                            request_params["body"] = body_bytes.decode("utf-8", errors="ignore")
                 except Exception as e:
-                    logger.warning(f"AuditLogRoute failed to parse request body: {e}")
-                    
-            # 4. 执行业务逻辑
+                    logger.warning(f"AuditLogRoute failed to parse body bytes: {e}")
+            
+            # 3. 针对查询接口引入 Redis 异步防抖判定
+            skip_audit = False
+            if action and action.startswith("QUERY_"):
+                import hashlib
+                from app.infrastructure.redis_client import is_query_debounced
+                
+                # 组装参数 hash
+                param_str = json.dumps(request_params, sort_keys=True, ensure_ascii=False)
+                param_hash = hashlib.md5(param_str.encode("utf-8")).hexdigest()
+                debounce_key = f"hmp:audit:debounce:{operator or 'system'}:{action}:{param_hash}"
+                
+                # 尝试进行防抖锁定
+                skip_audit = await is_query_debounced(debounce_key, expire_seconds=3)
+
+            # 4. 执行业务逻辑并计时
+            import time
+            start_time = time.time()
             try:
                 response = await original_route_handler(request)
+                execution_time = round((time.time() - start_time) * 1000, 2)
                 
                 status = "success"
                 details = None
@@ -85,21 +122,25 @@ class AuditLogRoute(APIRoute):
                         logger.warning(f"AuditLogRoute failed to parse response body: {e}")
                         
                 # 异步入库审计日志
-                audit_service = AuditLogAppService()
-                await audit_service.record_log(
-                    request=request,
-                    action=action,
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                    status=status,
-                    details=details,
-                    operator=operator or "system"
-                )
+                if not skip_audit:
+                    audit_service = AuditLogAppService()
+                    await audit_service.record_log(
+                        request=request,
+                        action=action,
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                        status=status,
+                        details=details,
+                        operator=operator or "system",
+                        request_params=json.dumps(request_params, ensure_ascii=False) if request_params else None,
+                        execution_time=execution_time,
+                        method=request.method
+                    )
                 
                 return response
                 
             except Exception as e:
-                # 拦截业务抛出的未知运行时异常并记为失败
+                execution_time = round((time.time() - start_time) * 1000, 2)
                 logger.error(f"AuditLogRoute captured endpoint execution error: {e}")
                 
                 # 提取 HTTPException detail
@@ -107,16 +148,20 @@ class AuditLogRoute(APIRoute):
                 if hasattr(e, "detail"):
                     err_details = getattr(e, "detail")
                     
-                audit_service = AuditLogAppService()
-                await audit_service.record_log(
-                    request=request,
-                    action=action,
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                    status="failed",
-                    details=err_details,
-                    operator=operator or "system"
-                )
+                if not skip_audit:
+                    audit_service = AuditLogAppService()
+                    await audit_service.record_log(
+                        request=request,
+                        action=action,
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                        status="failed",
+                        details=err_details,
+                        operator=operator or "system",
+                        request_params=json.dumps(request_params, ensure_ascii=False) if request_params else None,
+                        execution_time=execution_time,
+                        method=request.method
+                    )
                 raise e
                 
         return custom_route_handler

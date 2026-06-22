@@ -34,7 +34,10 @@ def test_audit_route_success_and_failure():
             resource_id="999",
             status="success",
             details=None,
-            operator="user_123"
+            operator="user_123",
+            request_params=ANY,
+            execution_time=ANY,
+            method=ANY
         )
         
         # 2. 测试抛出 HTTPException 时的失败日志拦截
@@ -48,5 +51,49 @@ def test_audit_route_success_and_failure():
             resource_id=None,
             status="failed",
             details="Mock bad request",
-            operator="system"
+            operator="system",
+            request_params=ANY,
+            execution_time=ANY,
+            method=ANY
         )
+
+def test_audit_route_query_debounce():
+    app_test = FastAPI()
+    router = APIRouter(route_class=AuditLogRoute)
+    
+    @router.get("/test-query-msg", summary="QUERY_MESSAGES", description="site_message")
+    async def mock_query():
+        return {"status": "success", "data": []}
+        
+    @router.get("/test-query-logs", summary="QUERY_AUDIT_LOGS", description="audit_log")
+    async def mock_query_logs():
+        return {"status": "success", "data": []}
+        
+    app_test.include_router(router)
+    
+    # Mock record_log 和 is_query_debounced
+    with patch("app.application.audit_log.audit_log_app_service.AuditLogAppService.record_log") as mock_record, \
+         patch("app.infrastructure.redis_client.is_query_debounced") as mock_debounce:
+        
+        client = TestClient(app_test)
+        
+        # 1. 模拟第一次请求不防抖（mock_debounce 返回 False）
+        mock_debounce.return_value = False
+        response1 = client.get("/test-query-msg?keyword=test")
+        assert response1.status_code == 200
+        assert mock_record.call_count == 1
+        
+        # 2. 模拟第二次请求防抖（mock_debounce 返回 True）
+        mock_debounce.return_value = True
+        response2 = client.get("/test-query-msg?keyword=test")
+        assert response2.status_code == 200
+        # 审计记录次数依然为 1，说明被过滤了
+        assert mock_record.call_count == 1
+        
+        # 3. 测试 QUERY_AUDIT_LOGS 被剔除自审计
+        # 无论 mock_debounce 结果如何，都不应该记录审计日志
+        mock_record.reset_mock()
+        response_logs = client.get("/test-query-logs")
+        assert response_logs.status_code == 200
+        assert mock_record.call_count == 0
+
