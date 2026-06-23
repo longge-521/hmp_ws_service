@@ -4,7 +4,7 @@ import uuid
 import logging
 from typing import Optional, List, Dict
 from app.domain.game.room import GameRoom, Player, GamePhase
-from app.domain.game.ai_strategy import ai_decide_call, ai_decide_play
+from app.domain.game.ai_strategy import ai_decide_call, ai_decide_play, build_ai_context
 from app.infrastructure.redis_game_repository import RedisGameRepository
 
 logger = logging.getLogger("hmp_ws_service")
@@ -22,7 +22,7 @@ class GameAppService:
         # 维护一份等待中的玩家信息 (player_id -> nickname)
         self._pending_players: Dict[str, str] = {}
 
-    async def join_match(self, player_id: str, nickname: str) -> dict:
+    async def join_match(self, player_id: str, nickname: str, auto_ai: bool = True, base_score: int = 10) -> dict:
         """玩家加入匹配队列"""
         # 检查是否已在房间中
         existing_room = await self._repo.get_player_room(player_id)
@@ -30,18 +30,23 @@ class GameAppService:
             return {"error": "你已在游戏房间中", "room_id": existing_room}
 
         self._pending_players[player_id] = nickname
-        await self._repo.add_to_match_queue(player_id)
-        queue_len = await self._repo.get_match_queue_length()
+        await self._repo.add_to_match_queue(player_id, base_score=base_score)
+        queue_len = await self._repo.get_match_queue_length(base_score=base_score)
 
         if queue_len >= 3:
             # 凑够3人，创建房间
-            player_ids = await self._repo.pop_match_players(3)
+            player_ids = await self._repo.pop_match_players(3, base_score=base_score)
             if len(player_ids) >= 3:
-                return await self._create_room(player_ids)
+                return await self._create_room(player_ids, base_score=base_score)
+        elif auto_ai:
+            # 不够3人，但启用了自动机器人，则将当前在队列中的人全部弹出，用 AI 补齐并开局
+            player_ids = await self._repo.pop_match_players(queue_len, base_score=base_score)
+            if player_ids:
+                return await self.fill_with_ai(player_ids, base_score=base_score)
 
         return {"status": "waiting", "queue_length": queue_len}
 
-    async def fill_with_ai(self, player_ids: List[str]) -> dict:
+    async def fill_with_ai(self, player_ids: List[str], base_score: int = 10) -> dict:
         """用 AI 填充不足的玩家位并创建房间"""
         import random
         ai_count = 3 - len(player_ids)
@@ -50,9 +55,9 @@ class GameAppService:
             ai_id = f"ai_bot_{uuid.uuid4().hex[:8]}"
             player_ids.append(ai_id)
             self._pending_players[ai_id] = ai_names[i]
-        return await self._create_room(player_ids)
+        return await self._create_room(player_ids, base_score=base_score)
 
-    async def _create_room(self, player_ids: List[str]) -> dict:
+    async def _create_room(self, player_ids: List[str], base_score: int = 10) -> dict:
         """创建游戏房间并发牌"""
         room_id = f"room_{uuid.uuid4().hex[:12]}"
         players = []
@@ -63,7 +68,7 @@ class GameAppService:
             # 清理临时数据
             self._pending_players.pop(pid, None)
 
-        room = GameRoom.create(room_id, players)
+        room = GameRoom.create(room_id, players, base_score=base_score)
         room.deal()
 
         # 保存到 Redis
@@ -80,7 +85,8 @@ class GameAppService:
 
     async def cancel_match(self, player_id: str) -> dict:
         """取消匹配"""
-        await self._repo.remove_from_match_queue(player_id)
+        for bs in [10, 20, 80, 300, 900, 2700, 6000]:
+            await self._repo.remove_from_match_queue(player_id, base_score=bs)
         self._pending_players.pop(player_id, None)
         return {"status": "cancelled"}
 
@@ -155,13 +161,16 @@ class GameAppService:
             await self._repo.save_room(room)
             result["room"] = room
             result["ai_player"] = ai_id
+            result["score"] = score
             return result
 
         elif room.phase == GamePhase.PLAYING:
             hand = room.hands[ai_id]
             last_cp = room.last_play.card_play
             must_play = (room.last_play.player is None)
-            cards = ai_decide_play(hand, last_cp, must_play)
+            ctx = build_ai_context(room, ai_id)
+            # 使用 AI 策略决策出牌 (包含 DouZero 神经网络与规则引擎降级逻辑)
+            cards = ai_decide_play(hand, last_cp, must_play, ctx)
             if cards:
                 result = room.play_cards(ai_id, cards)
             else:
