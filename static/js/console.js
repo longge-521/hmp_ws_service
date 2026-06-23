@@ -936,6 +936,7 @@ function deleteUploadedFile(fileId, filename) {
 
 // 审计日志全局状态
 let currentAuditPage = 1;
+let currentAuditLogs = [];
 const auditPageLimit = 10;
 
 // 加载审计日志列表数据
@@ -966,6 +967,7 @@ function loadAuditLogs(page = 1) {
     .then(res => {
         tbody.innerHTML = '';
         const data = res.data || [];
+        currentAuditLogs = data; // 缓存当前页日志，供详情弹窗展示
         const total = res.total || 0;
         
         if (data.length === 0) {
@@ -982,7 +984,7 @@ function loadAuditLogs(page = 1) {
             return;
         }
         
-        data.forEach(log => {
+        data.forEach((log, index) => {
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid var(--card-border)';
             
@@ -1008,7 +1010,7 @@ function loadAuditLogs(page = 1) {
                 <td style="padding: 10px 8px; color: #34d399; font-weight: 500;">${log.execution_time != null ? log.execution_time + ' ms' : '--'}</td>
                 <td style="padding: 10px 8px; ${statusStyle}">${log.status}</td>
                 <td style="padding: 10px 8px;">
-                    <button class="btn-secondary" style="padding: 4px 10px; font-size: 11px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;" onclick="showAuditDetail('${escapeHtml(log.details || '{}')}')">
+                    <button class="btn-secondary" style="padding: 4px 10px; font-size: 11px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;" onclick="showAuditDetail(${index})">
                         <i data-lucide="eye" style="width: 12px; height: 12px;"></i>
                         <span>详情</span>
                     </button>
@@ -1048,16 +1050,34 @@ function changeAuditPage(direction) {
     loadAuditLogs(currentAuditPage + direction);
 }
 
-function showAuditDetail(detailsStr) {
-    const modal = document.getElementById('auditDetailModal');
-    const pre = document.getElementById('auditDetailPre');
-    if (!modal || !pre) return;
+function showAuditDetail(index) {
+    const log = currentAuditLogs[index];
+    if (!log) return;
     
-    try {
-        const parsed = JSON.parse(detailsStr);
-        pre.textContent = JSON.stringify(parsed, null, 2);
-    } catch (e) {
-        pre.textContent = detailsStr;
+    const modal = document.getElementById('auditDetailModal');
+    const paramsPre = document.getElementById('auditDetailParamsPre');
+    const errorPre = document.getElementById('auditDetailErrorPre');
+    if (!modal) return;
+    
+    // 1. 格式化渲染请求参数
+    if (paramsPre) {
+        paramsPre.textContent = log.request_params ? JSON.stringify(log.request_params, null, 2) : '{}';
+    }
+    
+    // 2. 格式化渲染执行详情/报错信息
+    if (errorPre) {
+        if (log.status === 'failed') {
+            errorPre.style.color = '#f87171'; // 错误详情显示红色
+            try {
+                const parsed = JSON.parse(log.details);
+                errorPre.textContent = JSON.stringify(parsed, null, 2);
+            } catch (e) {
+                errorPre.textContent = log.details || '未知系统异常';
+            }
+        } else {
+            errorPre.style.color = '#34d399'; // 成功详情显示绿色
+            errorPre.textContent = log.details || '无 (接口成功执行)';
+        }
     }
     modal.style.display = 'flex';
     lucide.createIcons();

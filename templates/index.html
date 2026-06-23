@@ -325,8 +325,27 @@
                     <i data-lucide="x" style="width: 18px; height: 18px;"></i>
                 </button>
             </div>
-            <div style="max-height: 400px; overflow-y: auto; background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 12px; border: 1px solid var(--card-border);">
-                <pre id="auditDetailPre" style="font-family: monospace; font-size: 12px; color: #34d399; white-space: pre-wrap; word-break: break-all; margin: 0;"></pre>
+            <div style="max-height: 450px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px;">
+                <!-- 请求参数 -->
+                <div>
+                    <h4 style="font-size: 13px; font-weight: 600; color: #60a5fa; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="code" style="width: 14px; height: 14px;"></i>
+                        <span>请求参数 (Request Parameters)</span>
+                    </h4>
+                    <div style="background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 12px; border: 1px solid var(--card-border);">
+                        <pre id="auditDetailParamsPre" style="font-family: monospace; font-size: 12px; color: #34d399; white-space: pre-wrap; word-break: break-all; margin: 0;"></pre>
+                    </div>
+                </div>
+                <!-- 异常/响应详情 -->
+                <div>
+                    <h4 style="font-size: 13px; font-weight: 600; color: #f87171; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="alert-circle" style="width: 14px; height: 14px;"></i>
+                        <span>执行详情/错误反馈 (Execution Details)</span>
+                    </h4>
+                    <div style="background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 12px; border: 1px solid var(--card-border);">
+                        <pre id="auditDetailErrorPre" style="font-family: monospace; font-size: 12px; color: var(--text-main); white-space: pre-wrap; word-break: break-all; margin: 0;"></pre>
+                    </div>
+                </div>
             </div>
             <div style="display: flex; justify-content: flex-end;">
                 <button onclick="closeAuditDetailModal()" class="btn-primary" style="padding: 8px 16px; font-size: 13px; border-radius: 8px;">关闭</button>
