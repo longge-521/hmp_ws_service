@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 import logging
 import asyncio
 import aio_pika
@@ -102,9 +103,13 @@ class RabbitMQAdapter:
             exchange_name, aio_pika.ExchangeType.FANOUT, durable=True
         )
         
-        # 2. 声明一个临时独占排他队列 (exclusive=True, auto_delete=True)
+        # 2. 声明一个带有唯一 UUID 命名且非排他的持久化临时队列 (durable=True, exclusive=False, auto_delete=True)
+        # - 设置 durable=True 规避新版 RabbitMQ (>=4.0) 禁用 transient_nonexcl_queues 的报错；
+        # - 设置 exclusive=False 规避 aio-pika robust 断线重连时旧连接未释放导致的 RESOURCE_LOCKED 锁死问题；
+        # - 设置 auto_delete=True 确保在所有消费者断开（实例正常关闭/退出）时队列能被自动删除。
+        queue_name = f"hmp_ws_broadcast_{uuid.uuid4().hex}"
         queue = await self.channel.declare_queue(
-            "", exclusive=True, auto_delete=True
+            queue_name, durable=True, exclusive=False, auto_delete=True
         )
         
         # 3. 将队列绑定到该交换机上
