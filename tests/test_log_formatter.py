@@ -2,8 +2,8 @@ import logging
 import pytest
 
 def test_color_formatter_format():
-    # 尝试导入我们计划在 main.py 中实现的 ColorFormatter
-    from main import ColorFormatter
+    # 尝试导入我们计划在基础设施包中实现的 ColorFormatter
+    from app.infrastructure.logging.setup import ColorFormatter
     
     formatter = ColorFormatter()
     record = logging.LogRecord(
