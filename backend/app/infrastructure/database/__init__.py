@@ -3,8 +3,10 @@
 
 from .message_repository import SQLMessageRepository
 from .upload_repository import SQLUploadedFileRepository
+from .game_repository import SQLGameRepository
 
 __all__ = [
     "SQLMessageRepository",
-    "SQLUploadedFileRepository"
+    "SQLUploadedFileRepository",
+    "SQLGameRepository",
 ]

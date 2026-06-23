@@ -46,4 +46,28 @@ class AuditLogORM(Base):
     created_at = Column(DateTime, default=datetime.datetime.now, index=True, comment="记录创建时间")
 
 
+class PlayerProfileORM(Base):
+    __tablename__ = "player_profile"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    player_id = Column(String(100), nullable=False, unique=True, index=True, comment="玩家ID")
+    nickname = Column(String(100), nullable=False, comment="昵称")
+    beans = Column(Integer, default=10000, nullable=False, comment="欢乐豆")
+    total_games = Column(Integer, default=0, nullable=False, comment="总对局数")
+    wins = Column(Integer, default=0, nullable=False, comment="胜场数")
+    created_at = Column(DateTime, default=datetime.datetime.now, comment="创建时间")
+
+
+class GameRecordORM(Base):
+    __tablename__ = "game_record"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    room_id = Column(String(100), nullable=False, index=True, comment="房间ID")
+    player_id = Column(String(100), nullable=False, index=True, comment="玩家ID")
+    role = Column(String(20), nullable=False, comment="角色: landlord/farmer")
+    result = Column(String(20), nullable=False, comment="结果: win/lose")
+    score_change = Column(Integer, nullable=False, comment="欢乐豆变化")
+    multiplier = Column(Integer, default=1, comment="倍数")
+    created_at = Column(DateTime, default=datetime.datetime.now, index=True, comment="对局时间")
+
+
+
 
