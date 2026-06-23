@@ -22,7 +22,7 @@ log_path = os.path.join(LOG_DIR, "hmp_ws_service.log")
 
 # 使用 RotatingFileHandler 以支持日志文件轮转与自动清理，防范磁盘满溢
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         RotatingFileHandler(log_path, maxBytes=10*1024*1024, backupCount=5, encoding="utf-8"),
@@ -30,6 +30,10 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("hmp_ws_service")
+
+# 屏蔽第三方 RabbitMQ 客户端底层繁杂的 Heartbeat 心跳及帧数据交互的 Debug 日志
+logging.getLogger("aiormq").setLevel(logging.WARNING)
+logging.getLogger("aio_pika").setLevel(logging.WARNING)
 
 # 引入 DDD 重构层
 from app.infrastructure.database.session import init_db

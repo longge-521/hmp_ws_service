@@ -1003,7 +1003,7 @@ function loadAuditLogs(page = 1) {
                 <td style="padding: 10px 8px; font-family: monospace; font-size:12px; color: #60a5fa;">${log.action}</td>
                 <td style="padding: 10px 8px; color: var(--text-muted);">${log.resource_type || '--'}</td>
                 <td style="padding: 10px 8px; color: var(--text-muted);">${log.resource_id || '--'}</td>
-                <td style="padding: 10px 8px; color: var(--text-muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(JSON.stringify(log.request_params || {}))}">${escapeHtml(log.request_params ? JSON.stringify(log.request_params).substring(0, 25) + '...' : '--')}</td>
+                <td style="padding: 10px 8px; color: var(--text-muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" class="tooltip-trigger" data-tooltip="${log.request_params ? escapeHtml(JSON.stringify(log.request_params, null, 2)) : ''}">${escapeHtml(log.request_params ? (JSON.stringify(log.request_params).substring(0, 25) + '...') : '--')}</td>
                 <td style="padding: 10px 8px; color: var(--text-muted);">${log.ip_address || '--'}</td>
                 <td style="padding: 10px 8px; color: #34d399; font-weight: 500;">${log.execution_time != null ? log.execution_time + ' ms' : '--'}</td>
                 <td style="padding: 10px 8px; ${statusStyle}">${log.status}</td>
