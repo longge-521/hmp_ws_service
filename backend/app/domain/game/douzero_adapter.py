@@ -1,6 +1,9 @@
+import logging
 from collections import Counter
 from typing import List, Dict, Any
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # DouZero 的 rank 映射表
 Card2Column = {3: 0, 4: 1, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6, 10: 7,
@@ -41,7 +44,7 @@ def douzero_to_card_ids(action: List[int], hand: List[int]) -> List[int]:
                 found = True
                 break
         if not found:
-            pass
+            logger.warning(f"Translation warning: DouZero card value {dz_val} has no matching card ID in hand {hand}")
     return matched
 
 def _cards2array(list_cards):
@@ -293,70 +296,32 @@ def _get_obs_landlord_down(infoset):
         'z': z.astype(np.int8),
     }
 
-def convert_action_to_douzero(action: List[int], hand_card_ids: List[int]) -> List[int]:
-    if not action:
-        return []
-    if any(x > 30 for x in action) or all(x in hand_card_ids for x in action):
-        return [card_id_to_douzero(c) for c in action]
-    return action
-
-def convert_cards_to_douzero(cards: List[int]) -> List[int]:
-    if not cards:
-        return []
-    if any(x > 30 for x in cards):
-        return [card_id_to_douzero(c) for c in cards]
-    if any(x in (0, 1, 2) for x in cards):
-        return [card_id_to_douzero(c) for c in cards]
-    return cards
-
-def determine_role(player_id: str, landlord_id: str, teammate_id: str, current_role: str, play_history: List[dict]) -> str:
-    if player_id in ("landlord", "landlord_up", "landlord_down"):
-        return player_id
-    if player_id == landlord_id:
-        return "landlord"
-    if current_role != "landlord":
-        if player_id == teammate_id:
-            return "landlord_down" if current_role == "landlord_up" else "landlord_up"
-        else:
-            return current_role
-            
-    landlord_down_id = None
-    for i, record in enumerate(play_history):
-        pid = record["player"]
-        if pid == landlord_id or pid == "landlord":
-            for j in range(i + 1, len(play_history)):
-                next_pid = play_history[j]["player"]
-                if next_pid != landlord_id and next_pid != "landlord":
-                    landlord_down_id = next_pid
-                    break
-            if landlord_down_id is not None:
-                break
-                
-    if landlord_down_id is not None:
-        if player_id == landlord_down_id:
-            return "landlord_down"
-        return "landlord_up"
-        
-    if teammate_id and teammate_id != landlord_id:
-        if player_id == teammate_id:
-            return "landlord_down"
-        return "landlord_up"
-        
-    return "landlord_down"
-
 def get_obs_for_douzero(
     hand: List[int],
     legal_actions: List[List[int]],
     role: str,
     landlord_id: str,
-    teammate_id: str,
+    player_ids: List[str],
     play_history: List[dict]
 ) -> dict:
-    # 1. 转换手牌和合法动作
+    # 1. 转换手牌和合法动作，确保无条件转换
     my_hand_dz = [card_id_to_douzero(c) for c in hand]
-    legal_actions_dz = [convert_action_to_douzero(act, hand) for act in legal_actions]
+    legal_actions_dz = [[card_id_to_douzero(c) for c in act] for act in legal_actions]
     
     # 2. 还原局势
+    if landlord_id not in player_ids:
+        raise ValueError(f"landlord_id '{landlord_id}' must be in player_ids {player_ids}")
+    
+    l_idx = player_ids.index(landlord_id)
+    landlord_down_id = player_ids[(l_idx + 1) % 3]
+    landlord_up_id = player_ids[(l_idx + 2) % 3]
+    
+    player_to_role = {
+        landlord_id: "landlord",
+        landlord_down_id: "landlord_down",
+        landlord_up_id: "landlord_up"
+    }
+
     played_cards = {"landlord": [], "landlord_up": [], "landlord_down": []}
     last_move_dict = {"landlord": [], "landlord_up": [], "landlord_down": []}
     num_cards_left = {"landlord": 20, "landlord_up": 17, "landlord_down": 17}
@@ -366,8 +331,14 @@ def get_obs_for_douzero(
     
     for record in play_history:
         pid = record["player"]
-        cards_dz = convert_cards_to_douzero(record["cards"])
-        p_role = determine_role(pid, landlord_id, teammate_id, role, play_history)
+        cards_dz = [card_id_to_douzero(c) for c in record["cards"]]
+        
+        if pid in ("landlord", "landlord_up", "landlord_down"):
+            p_role = pid
+        else:
+            p_role = player_to_role.get(pid)
+            if not p_role:
+                raise ValueError(f"Player ID '{pid}' in play history not found in player_ids {player_ids}")
         
         played_cards[p_role].extend(cards_dz)
         last_move_dict[p_role] = cards_dz
