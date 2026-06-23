@@ -96,8 +96,10 @@ class DouZeroAgentManager:
         return self._loaded
 
     def get_action_value(self, role: str, z: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        if not self._loaded or role not in self.models:
+        if not self._loaded:
             raise RuntimeError("DouZero models not loaded.")
+        if role not in self.models:
+            raise ValueError(f"Invalid role: {role}. Expected one of {list(self.models.keys())}")
         with torch.no_grad():
             return self.models[role](z, x)
 
