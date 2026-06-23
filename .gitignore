@@ -8,3 +8,4 @@ temp_uploads/
 .claude/
 .agent/
 .superpowers/
+docs/*
