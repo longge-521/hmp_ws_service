@@ -34,3 +34,29 @@ def test_path_traversal_prevention():
         
     with pytest.raises(ValueError):
         adapter.get_temp_upload_dir("..\\stolen_path")
+
+
+def test_save_chunk_rejects_invalid_chunk_index():
+    adapter = LocalStorageAdapter()
+
+    with pytest.raises(ValueError):
+        adapter.save_chunk("valid_upload_123", -1, b"abc")
+
+
+def test_save_chunk_rejects_oversized_chunk(monkeypatch):
+    adapter = LocalStorageAdapter()
+    monkeypatch.setattr(adapter, "MAX_CHUNK_BYTES", 4)
+
+    with pytest.raises(ValueError):
+        adapter.save_chunk("valid_upload_123", 0, b"abcde")
+
+
+def test_merge_chunks_rejects_invalid_total_chunks(monkeypatch):
+    adapter = LocalStorageAdapter()
+    monkeypatch.setattr(adapter, "MAX_TOTAL_CHUNKS", 3)
+
+    with pytest.raises(ValueError):
+        adapter.merge_chunks("valid_upload_123", "file.bin", 0)
+
+    with pytest.raises(ValueError):
+        adapter.merge_chunks("valid_upload_123", "file.bin", 4)

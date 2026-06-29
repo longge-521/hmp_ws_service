@@ -13,6 +13,7 @@ import {
   getCardDisplay,
   getPlayKindLabel,
   sortCardIds,
+  sortPlayedCards,
 } from '@/utils/cardUtils'
 import PlayerSeat from '@/components/PlayerSeat.vue'
 import HandCards from '@/components/HandCards.vue'
@@ -88,11 +89,23 @@ const showDoublingPanel = computed(() => {
 
 // 能否叫地主/抢地主判断
 const hasSomeoneCalled = computed(() => {
-  return gameStore.callRound === 2 ||
-         gameStore.multiplier > 1 ||
-         Object.values(gameStore.playerActions).some((action) => 
-           action.includes('分') || action.includes('叫地主') || action.includes('抢地主')
-         )
+  return gameStore.callRound === 2 || Object.values(gameStore.callScores).some((score) => score > 0)
+})
+
+const highestCallScore = computed(() => {
+  return Math.max(0, ...Object.values(gameStore.callScores))
+})
+
+const nextCallScore = computed(() => {
+  return hasSomeoneCalled.value ? Math.min(highestCallScore.value + 1, 3) : 1
+})
+
+const callActionLabel = computed(() => {
+  return hasSomeoneCalled.value ? '抢地主' : '叫地主'
+})
+
+const passCallLabel = computed(() => {
+  return hasSomeoneCalled.value ? '不抢' : '不叫'
 })
 
 // 计算玩家在房间中的相对座位定位（顺时针排布）
@@ -225,6 +238,9 @@ const discardCounts = computed(() => {
 onMounted(() => {
   if (!gameStore.wsConnected) {
     connect()
+  } else {
+    // 主动同步最新房间局势，防止大厅跳转延迟导致状态不同步
+    sendAction({ action: 'sync_room_state' })
   }
 
   // 开启倒计时检测
@@ -280,9 +296,9 @@ function handleTimeout() {
 }
 
 // 叫地主操作
-function handleCall(score: number) {
+function handleCall() {
   idleRoundCount.value = 0
-  sendAction({ action: 'call_landlord', score })
+  sendAction({ action: 'call_landlord', score: nextCallScore.value })
 }
 
 // 不叫/不抢操作
@@ -537,7 +553,7 @@ watch(
             :class="{ 'shimmer-active': gameStore.activeEffect === 'shimmer' && gameStore.lastPlay.player === seat.player.id }"
           >
             <PokerCard
-              v-for="cId in gameStore.playerPlayedCards[seat.player.id]"
+              v-for="cId in sortPlayedCards(gameStore.playerPlayedCards[seat.player.id] || [])"
               :key="cId"
               :card-id="cId"
               :no-hover="true"
@@ -574,7 +590,7 @@ watch(
               style="margin-top: 8px;"
             >
               <PokerCard
-                v-for="cId in gameStore.playerPlayedCards[seat.player.id]"
+                v-for="cId in sortPlayedCards(gameStore.playerPlayedCards[seat.player.id] || [])"
                 :key="cId"
                 :card-id="cId"
                 :no-hover="true"
@@ -652,14 +668,8 @@ watch(
 
         <!-- 叫地主阶段按钮 -->
         <div v-if="gameStore.gamePhase === 'CALLING'" class="actions-group">
-          <template v-if="!hasSomeoneCalled">
-            <button class="btn-action-call" @click="handleCall(1)">叫地主</button>
-            <button class="btn-action-pass" @click="handleSkipCall()">不叫</button>
-          </template>
-          <template v-else>
-            <button class="btn-action-call" @click="handleCall(3)">抢地主</button>
-            <button class="btn-action-pass" @click="handleSkipCall()">不抢</button>
-          </template>
+          <button class="btn-action-call" @click="handleCall">{{ callActionLabel }}</button>
+          <button class="btn-action-pass" @click="handleSkipCall()">{{ passCallLabel }}</button>
         </div>
 
         <!-- 出牌阶段按钮 -->

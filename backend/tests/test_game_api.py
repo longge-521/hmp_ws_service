@@ -44,7 +44,12 @@ def test_get_player_profile(mock_db):
         mock_repo.get_or_create_profile.return_value = mock_profile
         mock_repo_class.return_value = mock_repo
 
-        response = client.get("/api/game/profile/player123")
+        from app.infrastructure.auth import create_game_auth_token
+        token = create_game_auth_token("player123")
+        response = client.get(
+            "/api/game/profile/player123",
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["player_id"] == "player123"
@@ -54,6 +59,21 @@ def test_get_player_profile(mock_db):
         assert data["wins"] == 6
         assert data["win_rate"] == 0.6
         mock_repo.get_or_create_profile.assert_called_once_with("player123", "player123")
+
+
+def test_get_player_profile_rejects_missing_or_mismatched_token(mock_db):
+    client = TestClient(app)
+    from app.infrastructure.auth import create_game_auth_token
+
+    response = client.get("/api/game/profile/player123")
+    assert response.status_code == 401
+
+    other_token = create_game_auth_token("other-player")
+    response = client.get(
+        "/api/game/profile/player123",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert response.status_code == 403
 
 
 def test_get_game_history(mock_db):
@@ -85,7 +105,12 @@ def test_get_game_history(mock_db):
         mock_repo.get_history.return_value = mock_records
         mock_repo_class.return_value = mock_repo
 
-        response = client.get("/api/game/history/player123?limit=5")
+        from app.infrastructure.auth import create_game_auth_token
+        token = create_game_auth_token("player123")
+        response = client.get(
+            "/api/game/history/player123?limit=5",
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 2
@@ -150,8 +175,13 @@ def test_register_user(mock_db):
         assert data["player_id"] == "player123"
         assert data["nickname"] == "TestNick"
         assert data["username"] == "testuser"
+        assert data["auth_token"]
         mock_repo.get_user_by_username.assert_called_once_with("testuser")
-        mock_repo.create_user_and_profile.assert_called_once_with("testuser", "password123", "TestNick")
+        args = mock_repo.create_user_and_profile.call_args.args
+        assert args[0] == "testuser"
+        assert args[1] != "password123"
+        assert args[1].startswith("pbkdf2_sha256$")
+        assert args[2] == "TestNick"
 
 
 def test_login_user(mock_db):
@@ -159,7 +189,8 @@ def test_login_user(mock_db):
     mock_user = MagicMock()
     mock_user.player_id = "player123"
     mock_user.username = "testuser"
-    mock_user.password = "password123"
+    from app.infrastructure.auth import hash_password
+    mock_user.password = hash_password("password123")
     mock_profile = PlayerProfile(
         player_id="player123",
         nickname="TestNick",
@@ -184,6 +215,7 @@ def test_login_user(mock_db):
         assert data["player_id"] == "player123"
         assert data["nickname"] == "TestNick"
         assert data["username"] == "testuser"
+        assert data["auth_token"]
         mock_repo.get_user_by_username.assert_called_once_with("testuser")
 
 
@@ -197,11 +229,49 @@ def test_update_player_beans(mock_db):
         mock_repo_class.return_value = mock_repo
         
         # 测试成功设置欢乐豆
-        response = client.post("/api/game/profile/player123/beans", json={"beans": 25000})
+        from app.infrastructure.auth import create_game_auth_token
+        token = create_game_auth_token("player123")
+        response = client.post(
+            "/api/game/profile/player123/beans",
+            json={"beans": 25000},
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["ok"] is True
         assert data["beans"] == 25000
         mock_repo.update_beans.assert_called_once_with("player123", 25000)
 
+
+def test_update_player_rank(mock_db):
+    client = TestClient(app)
+    with patch("app.interfaces.api.game_routes.SQLGameRepository") as mock_repo_class:
+        mock_repo = MagicMock()
+        mock_profile = MagicMock()
+        mock_profile.rank_id = 35
+        mock_profile.sub_rank = 4
+        mock_profile.stars = 3
+        mock_profile.rank_title = "亲王IV"
+        mock_repo.get_or_create_profile.return_value = mock_profile
+        mock_repo_class.return_value = mock_repo
+        
+        # 测试修改排位接口
+        from app.infrastructure.auth import create_game_auth_token
+        token = create_game_auth_token("player123")
+        response = client.post(
+            "/api/game/profile/player123/rank",
+            json={
+                "rank_id": 35,
+                "sub_rank": 4,
+                "stars": 3
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["rank_id"] == 35
+        assert data["sub_rank"] == 4
+        assert data["stars"] == 3
+        mock_repo.update_rank_profile.assert_called_once_with("player123", 35, 4, 3)
 

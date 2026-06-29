@@ -5,9 +5,15 @@ from pydantic import BaseModel, Field
 from app.infrastructure.database.session import get_db
 from app.infrastructure.database.game_repository import SQLGameRepository
 from app.infrastructure.audit_route import AuditLogRoute
+from app.infrastructure.auth import create_game_auth_token, hash_password, require_game_player_id, verify_password
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/game", tags=["Game API"], route_class=AuditLogRoute)
+
+
+def ensure_player_access(player_id: str, current_player_id: str) -> None:
+    if player_id != current_player_id:
+        raise HTTPException(status_code=403, detail="Forbidden: Cannot access another player")
 
 
 class UserRegisterRequest(BaseModel):
@@ -22,7 +28,13 @@ class UserLoginRequest(BaseModel):
 
 
 class UpdateBeansRequest(BaseModel):
-    beans: int = Field(..., ge=0, comment="修改欢乐豆，必须非负数")
+    beans: int = Field(..., ge=0, description="Set beans; must be non-negative")
+
+
+class UpdateRankRequest(BaseModel):
+    rank_id: int = Field(..., ge=1, le=36, description="Rank level, 1-36")
+    sub_rank: int = Field(..., ge=1, le=4, description="Sub-rank level, 1-4")
+    stars: int = Field(..., ge=0, description="Star count")
 
 
 
@@ -33,12 +45,13 @@ def register_user(req: UserRegisterRequest, db: Session = Depends(get_db)):
     existing = repo.get_user_by_username(username_norm)
     if existing:
         raise HTTPException(status_code=400, detail="账号已存在，请直接登录")
-    user, profile = repo.create_user_and_profile(username_norm, req.password, req.nickname.strip())
+    user, profile = repo.create_user_and_profile(username_norm, hash_password(req.password), req.nickname.strip())
     return {
         "ok": True,
         "player_id": user.player_id,
         "nickname": profile.nickname,
-        "username": user.username
+        "username": user.username,
+        "auth_token": create_game_auth_token(user.player_id),
     }
 
 
@@ -49,20 +62,26 @@ def login_user(req: UserLoginRequest, db: Session = Depends(get_db)):
     user = repo.get_user_by_username(username_norm)
     if not user:
         raise HTTPException(status_code=400, detail="账号不存在，请先注册")
-    if user.password != req.password:
+    if not verify_password(req.password, user.password):
         raise HTTPException(status_code=400, detail="密码不正确")
     profile = repo.get_or_create_profile(user.player_id, username_norm)
     return {
         "ok": True,
         "player_id": user.player_id,
         "nickname": profile.nickname,
-        "username": user.username
+        "username": user.username,
+        "auth_token": create_game_auth_token(user.player_id),
     }
 
 
 
 @router.get("/profile/{player_id}")
-def get_player_profile(player_id: str, db: Session = Depends(get_db)):
+def get_player_profile(
+    player_id: str,
+    db: Session = Depends(get_db),
+    current_player_id: str = Depends(require_game_player_id),
+):
+    ensure_player_access(player_id, current_player_id)
     repo = SQLGameRepository(db)
     profile = repo.get_or_create_profile(player_id, player_id)
     return {
@@ -72,11 +91,21 @@ def get_player_profile(player_id: str, db: Session = Depends(get_db)):
         "total_games": profile.total_games,
         "wins": profile.wins,
         "win_rate": profile.win_rate,
+        "rank_id": profile.rank_id,
+        "sub_rank": profile.sub_rank,
+        "stars": profile.stars,
+        "rank_title": profile.rank_title
     }
 
 
 @router.get("/history/{player_id}")
-def get_game_history(player_id: str, limit: int = 20, db: Session = Depends(get_db)):
+def get_game_history(
+    player_id: str,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_player_id: str = Depends(require_game_player_id),
+):
+    ensure_player_access(player_id, current_player_id)
     repo = SQLGameRepository(db)
     records = repo.get_history(player_id, limit)
     return [{
@@ -100,11 +129,18 @@ def get_leaderboard(limit: int = 20, db: Session = Depends(get_db)):
         "beans": p.beans,
         "total_games": p.total_games,
         "win_rate": p.win_rate,
+        "rank_title": p.rank_title,
     } for i, p in enumerate(profiles)]
 
 
 @router.post("/profile/{player_id}/beans")
-def update_beans(player_id: str, req: UpdateBeansRequest, db: Session = Depends(get_db)):
+def update_beans(
+    player_id: str,
+    req: UpdateBeansRequest,
+    db: Session = Depends(get_db),
+    current_player_id: str = Depends(require_game_player_id),
+):
+    ensure_player_access(player_id, current_player_id)
     repo = SQLGameRepository(db)
     repo.get_or_create_profile(player_id, player_id)
     repo.update_beans(player_id, req.beans)
@@ -115,3 +151,23 @@ def update_beans(player_id: str, req: UpdateBeansRequest, db: Session = Depends(
         "beans": updated_profile.beans
     }
 
+
+@router.post("/profile/{player_id}/rank")
+def update_player_rank(
+    player_id: str,
+    req: UpdateRankRequest,
+    db: Session = Depends(get_db),
+    current_player_id: str = Depends(require_game_player_id),
+):
+    ensure_player_access(player_id, current_player_id)
+    repo = SQLGameRepository(db)
+    repo.get_or_create_profile(player_id, player_id)
+    repo.update_rank_profile(player_id, req.rank_id, req.sub_rank, req.stars)
+    updated_profile = repo.get_or_create_profile(player_id, player_id)
+    return {
+        "ok": True,
+        "player_id": player_id,
+        "rank_id": updated_profile.rank_id,
+        "sub_rank": updated_profile.sub_rank,
+        "stars": updated_profile.stars
+    }

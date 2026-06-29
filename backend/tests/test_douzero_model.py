@@ -1,5 +1,6 @@
 import pytest
 import torch
+from unittest.mock import patch
 from app.domain.game.douzero_model import DouZeroAgentManager, LandlordLstmModel, FarmerLstmModel
 
 def test_model_definitions_and_inference():
@@ -18,8 +19,9 @@ def test_model_definitions_and_inference():
     assert out_farmer.shape == (1, 1)
 
     # Test Manager Fallback when weights are missing
-    manager = DouZeroAgentManager()
-    assert manager.is_available() is False
+    with patch("os.path.exists", return_value=False):
+        manager = DouZeroAgentManager()
+        assert manager.is_available() is False
 
     # Test get_action_value when models are not loaded
     with pytest.raises(RuntimeError, match="DouZero models not loaded."):

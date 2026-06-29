@@ -797,8 +797,8 @@ def ai_decide_play(
         )
 
     # 1. 尝试使用 DouZero RL 模型决策 (若已启用且有出牌历史数据)
-    if ctx and ctx.play_history and douzero_manager.is_available():
-        try:
+    try:
+        if ctx and ctx.play_history is not None and douzero_manager.is_available():
             legal_actions = generate_legal_actions_dz(hand, last_play, must_play)
             if legal_actions:
                 obs = get_obs_for_douzero(
@@ -807,7 +807,7 @@ def ai_decide_play(
                     role=ctx.role,
                     landlord_id=ctx.landlord_id,
                     player_ids=ctx.player_ids,
-                    play_history=ctx.play_history
+                    play_history=ctx.play_history,
                 )
                 import torch
                 z = torch.from_numpy(obs['z_batch']).float()
@@ -816,11 +816,10 @@ def ai_decide_play(
                 best_idx = torch.argmax(y, dim=0).item()
                 best_action_dz = obs['legal_actions'][best_idx]
                 best_action = douzero_to_card_ids(best_action_dz, hand)
-                if not best_action:
-                    return None
-                return best_action
-        except Exception as e:
-            logger.warning(f"DouZero failed, falling back to rule engine: {e}")
+                if best_action:
+                    return best_action
+    except Exception as e:
+        logger.warning(f"DouZero failed, falling back to rule engine: {e}")
 
     # 2. 对手牌进行排序与最优结构拆解 (规则引擎回退逻辑)
     sorted_hand = sort_cards(hand)

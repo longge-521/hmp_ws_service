@@ -28,7 +28,7 @@ setup_logging()
 logger = logging.getLogger("hmp_ws_service")
 
 # 引入 DDD 重构层
-from app.infrastructure.database.session import init_db
+from app.infrastructure.database.session import init_db, should_auto_init_db
 from app.infrastructure.storage.local_storage_adapter import LocalStorageAdapter
 from app.infrastructure.mq.rabbitmq_adapter import RabbitMQAdapter
 from app.application.upload.upload_app_service import UploadAppService
@@ -156,11 +156,14 @@ async def stale_upload_reaper(app_instance: FastAPI):
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
     # 1. 自动创建/确认 MySQL 表结构
-    try:
-        init_db()
-        logger.info("MySQL tables verified/created successfully.")
-    except Exception as e:
-        logger.error(f"Failed to initialize MySQL tables: {e}")
+    if should_auto_init_db():
+        try:
+            init_db()
+            logger.info("MySQL tables verified/created successfully.")
+        except Exception as e:
+            logger.error(f"Failed to initialize MySQL tables: {e}")
+    else:
+        logger.info("Skipping automatic MySQL table initialization.")
 
     # 2. 依赖注入装配 (IoC)
     websocket_manager = WSConnectionManager()

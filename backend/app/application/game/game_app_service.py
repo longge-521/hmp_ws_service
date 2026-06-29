@@ -1,5 +1,6 @@
 # backend/app/application/game/game_app_service.py
 """游戏编排服务：匹配、房间管理、游戏流程控制"""
+import asyncio
 import uuid
 import logging
 from typing import Optional, List, Dict
@@ -45,6 +46,23 @@ class GameAppService:
                 return await self.fill_with_ai(player_ids, base_score=base_score)
 
         return {"status": "waiting", "queue_length": queue_len}
+
+    async def match_ai_for_player(self, player_id: str, nickname: str, base_score: int) -> Optional[dict]:
+        """强制为某个玩家匹配 AI 并开局（如果在队列中），若队列里有其他真人玩家也一并拉入"""
+        existing_room = await self._repo.get_player_room(player_id)
+        if existing_room:
+            return None
+
+        removed = await self._repo.remove_from_match_queue(player_id, base_score=base_score)
+        if removed and removed > 0:
+            self._pending_players[player_id] = nickname
+            player_ids = [player_id]
+            # 尝试拉入队列中其他正在等待的真人玩家（最多2人）
+            others = await self._repo.pop_match_players(2, base_score=base_score)
+            if others:
+                player_ids.extend(others)
+            return await self.fill_with_ai(player_ids, base_score=base_score)
+        return None
 
     async def fill_with_ai(self, player_ids: List[str], base_score: int = 10) -> dict:
         """用 AI 填充不足的玩家位并创建房间"""
@@ -145,13 +163,22 @@ class GameAppService:
         """处理 AI 回合"""
         ai_id = room.current_turn
         if room.phase == GamePhase.CALLING:
+            await asyncio.sleep(1)  # AI 思考延迟
             hand = room.hands[ai_id]
             score = ai_decide_call(hand)
             if score > 0:
                 # 确保叫分高于当前最高分
                 current_max = max(room._call_scores.values()) if room._call_scores else 0
-                if score <= current_max:
-                    score = 0
+                if room._call_round == 1:
+                    # 第一轮：叫分增量限制为+1，避免直接叫3分导致流程提早结束
+                    proposed = current_max + 1
+                    if proposed <= score:
+                        score = proposed
+                    else:
+                        score = 0
+                else:
+                    if score <= current_max:
+                        score = 0
             if score > 0:
                 result = room.call_landlord(ai_id, score)
             else:
@@ -165,6 +192,7 @@ class GameAppService:
             return result
 
         elif room.phase == GamePhase.PLAYING:
+            await asyncio.sleep(1)  # AI 思考延迟
             hand = room.hands[ai_id]
             last_cp = room.last_play.card_play
             must_play = (room.last_play.player is None)

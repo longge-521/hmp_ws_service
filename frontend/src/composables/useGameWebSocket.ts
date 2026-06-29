@@ -37,8 +37,8 @@ export function useGameWebSocket() {
     socketPlayerId = playerStore.playerId
     const host = window.location.host
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const token = localStorage.getItem('hmp_token') || new URLSearchParams(window.location.search).get('token') || ''
-    const tokenQuery = token ? `?token=${token}` : ''
+    const token = playerStore.authToken || localStorage.getItem('hmp_game_auth_token') || ''
+    const tokenQuery = token ? `?auth_token=${encodeURIComponent(token)}` : ''
     const url = `${protocol}//${host}/ws/game/${playerStore.playerId}${tokenQuery}`
 
     const socket = new WebSocket(url)
@@ -152,13 +152,13 @@ export function useGameWebSocket() {
         }
         break
       case 'call_made': {
-        const isFirst = !Object.values(gameStore.playerActions).some(act => act === '叫地主' || act === '抢地主' || act.endsWith('分'))
+        const hadBid = Object.values(gameStore.callScores).some((score) => score > 0)
         if (data.room_state) gameStore.updateFromRoomState(data.room_state)
-        gameStore.playerActions = { ...gameStore.playerActions, [data.player]: isFirst ? '叫地主' : '抢地主' }
+        gameStore.playerActions = { ...gameStore.playerActions, [data.player]: hadBid ? '抢地主' : '叫地主' }
         break
       }
       case 'call_skipped': {
-        const hasBid = Object.values(gameStore.playerActions).some(act => act === '叫地主' || act === '抢地主' || act.endsWith('分'))
+        const hasBid = Object.values(gameStore.callScores).some((score) => score > 0)
         if (data.room_state) gameStore.updateFromRoomState(data.room_state)
         gameStore.playerActions = { ...gameStore.playerActions, [data.player]: hasBid ? '不抢' : '不叫' }
         break
@@ -224,6 +224,19 @@ export function useGameWebSocket() {
         if (data.room_state) {
           data.room_state.phase = 'PLAYING'
           gameStore.updateFromRoomState(data.room_state)
+          // 将最后的绝杀出牌写入 playerPlayedCards，以便在桌面上与结算单中正确展示绝杀牌
+          if (data.room_state.last_play && data.room_state.last_play.player) {
+            const lastPlayer = data.room_state.last_play.player
+            const lastCards = data.room_state.last_play.cards || []
+            gameStore.playerPlayedCards = {
+              ...gameStore.playerPlayedCards,
+              [lastPlayer]: lastCards
+            }
+            gameStore.playerActions = {
+              ...gameStore.playerActions,
+              [lastPlayer]: ''
+            }
+          }
         }
         
         const settlementData = {

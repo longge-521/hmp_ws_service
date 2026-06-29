@@ -34,6 +34,8 @@ export const useGameStore = defineStore('game', () => {
   const turnTimeout = ref(15)
   const multiplier = ref(1)
   const callRound = ref(1)
+  const callScores = ref<Record<string, number>>({})
+  const firstBidder = ref('')
   const landlord = ref('')
   const settlement = ref<any>(null)
   const errorMsg = ref('')
@@ -84,6 +86,8 @@ export const useGameStore = defineStore('game', () => {
     if (state.turn_deadline !== undefined) turnDeadline.value = state.turn_deadline || 0
     if (state.multiplier !== undefined) multiplier.value = state.multiplier
     if (state.call_round !== undefined) callRound.value = state.call_round
+    if (state.call_scores !== undefined) callScores.value = state.call_scores || {}
+    if (state.first_bidder !== undefined) firstBidder.value = state.first_bidder || ''
     if (state.landlord !== undefined) landlord.value = state.landlord || ''
     if (state.bottom_cards !== undefined) bottomCards.value = state.bottom_cards
     if (state.last_play) lastPlay.value = {
@@ -107,6 +111,8 @@ export const useGameStore = defineStore('game', () => {
     turnDeadline.value = 0
     multiplier.value = 1
     callRound.value = 1
+    callScores.value = {}
+    firstBidder.value = ''
     landlord.value = ''
     settlement.value = null
     errorMsg.value = ''
@@ -125,7 +131,7 @@ export const useGameStore = defineStore('game', () => {
   return {
     wsConnected, roomId, gamePhase, players, myHand, selectedCards,
     bottomCards, lastPlay, currentTurn, turnDeadline, turnTimeout, multiplier,
-    callRound, landlord, settlement, errorMsg, isMyTurn, playerActions, playerPlayedCards,
+    callRound, callScores, firstBidder, landlord, settlement, errorMsg, isMyTurn, playerActions, playerPlayedCards,
     allPlayedCards, baseScore, showAllHands, showGameOverBanner, showWinnerBanner, gameOverTitle,
     showRedealNotice, activeEffect,
     toggleCard, clearSelection, selectCards, updateFromRoomState, reset,

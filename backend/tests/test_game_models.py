@@ -18,6 +18,18 @@ class TestPlayerProfile:
         p = PlayerProfile(player_id="p1", nickname="玩家1", total_games=10, wins=6)
         assert p.win_rate == 0.6
 
+    def test_player_profile_rank_title(self):
+        p = PlayerProfile(player_id="p1", nickname="玩家1", rank_id=1, sub_rank=4, stars=0)
+        assert p.rank_title == "包身工IV"
+        
+        # 验证 1 映射为 I 级
+        p2 = PlayerProfile(player_id="p1", nickname="玩家1", rank_id=6, sub_rank=1, stars=2)
+        assert p2.rank_title == "掌柜I"
+        
+        # 验证 36 级(至尊)不带罗马数字后缀
+        p3 = PlayerProfile(player_id="p1", nickname="玩家1", rank_id=36, sub_rank=1, stars=10)
+        assert p3.rank_title == "至尊"
+
 
 class TestGameRecord:
     def test_create_record(self):

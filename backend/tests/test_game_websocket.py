@@ -40,11 +40,29 @@ def test_game_websocket_unauthorized(monkeypatch):
         assert exc_info.value.code == 1008
 
 
+def test_game_websocket_rejects_missing_or_mismatched_game_token(monkeypatch):
+    monkeypatch.setattr(auth, "API_TOKEN", "")
+    client = TestClient(app)
+    from starlette.websockets import WebSocketDisconnect
+
+    with client.websocket_connect("/ws/game/player1") as websocket:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            websocket.receive_text()
+        assert exc_info.value.code == 1008
+
+    other_token = auth.create_game_auth_token("other-player")
+    with client.websocket_connect(f"/ws/game/player1?auth_token={other_token}") as websocket:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            websocket.receive_text()
+        assert exc_info.value.code == 1008
+
+
 def test_game_websocket_join_and_cancel_match(monkeypatch, mock_game_service):
     monkeypatch.setattr(auth, "API_TOKEN", "")
+    game_token = auth.create_game_auth_token("player1")
 
     client = TestClient(app)
-    with client.websocket_connect("/ws/game/player1") as websocket:
+    with client.websocket_connect(f"/ws/game/player1?auth_token={game_token}") as websocket:
         # 发送 join_match
         websocket.send_json({"action": "join_match", "nickname": "Player One"})
         resp = websocket.receive_json()
@@ -61,6 +79,7 @@ def test_game_websocket_join_and_cancel_match(monkeypatch, mock_game_service):
 
 def test_game_websocket_actions(monkeypatch, mock_game_service):
     monkeypatch.setattr(auth, "API_TOKEN", "")
+    game_token = auth.create_game_auth_token("player1")
 
     # 模拟房间及事件广播
     players = [
@@ -72,7 +91,7 @@ def test_game_websocket_actions(monkeypatch, mock_game_service):
     room.phase = GamePhase.CALLING
 
     client = TestClient(app)
-    with client.websocket_connect("/ws/game/player1") as websocket:
+    with client.websocket_connect(f"/ws/game/player1?auth_token={game_token}") as websocket:
         # 1. 测试叫分
         mock_game_service.handle_call.return_value = {"room": room}
         websocket.send_json({"action": "call_landlord", "score": 3})
@@ -116,6 +135,7 @@ def test_game_websocket_actions(monkeypatch, mock_game_service):
 
 def test_game_websocket_join_match_insufficient_beans(monkeypatch, mock_game_service):
     monkeypatch.setattr(auth, "API_TOKEN", "")
+    game_token = auth.create_game_auth_token("player1")
     
     # 模拟 Profile 欢乐豆仅 500
     mock_profile = MagicMock()
@@ -127,11 +147,10 @@ def test_game_websocket_join_match_insufficient_beans(monkeypatch, mock_game_ser
         mock_repo.get_or_create_profile.return_value = mock_profile
         mock_repo_class.return_value = mock_repo
         
-        with client.websocket_connect("/ws/game/player1") as websocket:
+        with client.websocket_connect(f"/ws/game/player1?auth_token={game_token}") as websocket:
             # 申请加入底分为 80 的初级场（需要最低 3000）
             websocket.send_json({"action": "join_match", "nickname": "Player One", "base_score": 80})
             resp = websocket.receive_json()
             assert resp["event"] == "error"
             assert "欢乐豆不足" in resp["msg"]
             mock_game_service.join_match.assert_not_called()
-

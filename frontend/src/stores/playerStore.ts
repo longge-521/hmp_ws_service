@@ -6,28 +6,45 @@ export const usePlayerStore = defineStore('player', () => {
   const playerId = ref(localStorage.getItem('hmp_player_id') || '')
   const nickname = ref(localStorage.getItem('hmp_nickname') || '')
   const username = ref(localStorage.getItem('hmp_username') || '')
+  const authToken = ref(localStorage.getItem('hmp_game_auth_token') || '')
   const beans = ref(10000)
   const totalGames = ref(0)
   const winRate = ref(0)
+  const rankId = ref(1)
+  const subRank = ref(4)
+  const stars = ref(0)
+  const rankTitle = ref('包身工IV')
 
-  function setSession(id: string, name: string, accountName: string) {
+  function authHeaders(): Record<string, string> {
+    return authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}
+  }
+
+  function setSession(id: string, name: string, accountName: string, token: string) {
     playerId.value = id
     nickname.value = name
     username.value = accountName
+    authToken.value = token
     localStorage.setItem('hmp_player_id', id)
     localStorage.setItem('hmp_nickname', name)
     localStorage.setItem('hmp_username', accountName)
+    localStorage.setItem('hmp_game_auth_token', token)
   }
 
   async function fetchProfile() {
     if (!playerId.value) return
     try {
-      const res = await fetch(`/api/game/profile/${playerId.value}`)
+      const res = await fetch(`/api/game/profile/${playerId.value}`, {
+        headers: authHeaders(),
+      })
       if (res.ok) {
         const data = await res.json()
         beans.value = data.beans
         totalGames.value = data.total_games
         winRate.value = data.win_rate || 0
+        rankId.value = data.rank_id || 1
+        subRank.value = data.sub_rank || 4
+        stars.value = data.stars || 0
+        rankTitle.value = data.rank_title || '包身工IV'
       }
     } catch (e) {
       console.error('Failed to fetch player profile:', e)
@@ -66,7 +83,7 @@ export const usePlayerStore = defineStore('player', () => {
       }
       const data = await res.json()
       if (data.ok) {
-        setSession(data.player_id, data.nickname, data.username)
+        setSession(data.player_id, data.nickname, data.username, data.auth_token)
         await fetchProfile()
         return { ok: true }
       }
@@ -100,7 +117,7 @@ export const usePlayerStore = defineStore('player', () => {
       }
       const data = await res.json()
       if (data.ok) {
-        setSession(data.player_id, data.nickname, data.username)
+        setSession(data.player_id, data.nickname, data.username, data.auth_token)
         await fetchProfile()
         return { ok: true }
       }
@@ -114,9 +131,11 @@ export const usePlayerStore = defineStore('player', () => {
     playerId.value = ''
     nickname.value = ''
     username.value = ''
+    authToken.value = ''
     localStorage.removeItem('hmp_player_id')
     localStorage.removeItem('hmp_nickname')
     localStorage.removeItem('hmp_username')
+    localStorage.removeItem('hmp_game_auth_token')
   }
 
   async function modifyBeans(newBeans: number): Promise<{ ok: boolean; error?: string }> {
@@ -126,7 +145,7 @@ export const usePlayerStore = defineStore('player', () => {
     try {
       const res = await fetch(`/api/game/profile/${playerId.value}/beans`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ beans: newBeans })
       })
       if (!res.ok) {
@@ -141,6 +160,31 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  return { playerId, nickname, username, beans, totalGames, winRate, register, login, logout, fetchProfile, modifyBeans }
-})
+  async function modifyRank(rid: number, srank: number, starCount: number): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await fetch(`/api/game/profile/${playerId.value}/rank`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ rank_id: rid, sub_rank: srank, stars: starCount })
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        return { ok: false, error: errData.detail || '修改排位失败' }
+      }
+      const data = await res.json()
+      rankId.value = data.rank_id
+      subRank.value = data.sub_rank
+      stars.value = data.stars
+      await fetchProfile()
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: e.message || '网络连接失败' }
+    }
+  }
 
+  return {
+    playerId, nickname, username, authToken, beans, totalGames, winRate,
+    rankId, subRank, stars, rankTitle,
+    register, login, logout, fetchProfile, modifyBeans, modifyRank
+  }
+})

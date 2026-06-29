@@ -195,6 +195,11 @@ class GameWebSocketHandler:
                 event = {"event": "chat_msg", "player": self.player_id, "msg_id": msg_id}
                 await self._broadcast_room_event(room, event)
 
+        elif action == "sync_room_state":
+            room_state = await self.service.get_room_state(self.player_id)
+            if room_state:
+                await self._send({"event": "reconnected", **room_state})
+
         else:
             await self._send({"event": "error", "msg": f"未知动作: {action}"})
 
@@ -302,6 +307,7 @@ class GameWebSocketHandler:
                     is_win = score_change > 0
                     repo.get_or_create_profile(p.id, p.nickname)
                     repo.update_profile_stats(p.id, score_change, is_win)
+                    repo.update_rank_stats(p.id, is_win, room.multiplier)
                     repo.save_game_record(GameRecord(
                         room_id=room.room_id,
                         player_id=p.id,

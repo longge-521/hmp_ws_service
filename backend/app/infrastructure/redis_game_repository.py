@@ -60,17 +60,23 @@ class RedisGameRepository:
 
     # ── 匹配队列 ──
 
-    async def add_to_match_queue(self, player_id: str) -> None:
-        await self._redis.rpush(MATCH_QUEUE_KEY, player_id)
+    def _get_queue_key(self, base_score: int) -> str:
+        return f"{MATCH_QUEUE_KEY}:{base_score}"
 
-    async def remove_from_match_queue(self, player_id: str) -> None:
-        await self._redis.lrem(MATCH_QUEUE_KEY, 1, player_id)
+    async def add_to_match_queue(self, player_id: str, base_score: int = 10) -> None:
+        key = self._get_queue_key(base_score)
+        await self._redis.lrem(key, 0, player_id)
+        await self._redis.rpush(key, player_id)
 
-    async def pop_match_players(self, count: int = 3) -> List[str]:
+    async def remove_from_match_queue(self, player_id: str, base_score: int = 10) -> int:
+        return await self._redis.lrem(self._get_queue_key(base_score), 1, player_id)
+
+    async def pop_match_players(self, count: int = 3, base_score: int = 10) -> List[str]:
         """原子性地从队列头部弹出 count 个玩家"""
         players = []
+        key = self._get_queue_key(base_score)
         for _ in range(count):
-            pid = await self._redis.lpop(MATCH_QUEUE_KEY)
+            pid = await self._redis.lpop(key)
             if pid is None:
                 break
             if isinstance(pid, bytes):
@@ -78,6 +84,6 @@ class RedisGameRepository:
             players.append(pid)
         return players
 
-    async def get_match_queue_length(self) -> int:
-        res = await self._redis.llen(MATCH_QUEUE_KEY)
+    async def get_match_queue_length(self, base_score: int = 10) -> int:
+        res = await self._redis.llen(self._get_queue_key(base_score))
         return res

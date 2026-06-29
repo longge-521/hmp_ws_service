@@ -54,10 +54,25 @@ async def game_websocket_endpoint(
     game_service = Depends(get_game_service),
 ):
     # Token 校验
-    from app.infrastructure.auth import verify_ws_token
+    from app.infrastructure.auth import verify_game_auth_token, verify_ws_token
     if not verify_ws_token(websocket.query_params):
         await websocket.accept()
         await websocket.close(code=1008, reason="Unauthorized")
+        return
+    game_auth_token = websocket.query_params.get("auth_token")
+    if not game_auth_token:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+    try:
+        token_player_id = verify_game_auth_token(game_auth_token)
+    except Exception:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+    if token_player_id != player_id:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="Forbidden")
         return
 
     from app.interfaces.websocket.game_handler import GameWebSocketHandler

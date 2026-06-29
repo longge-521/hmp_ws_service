@@ -57,10 +57,17 @@ class TestRedisGameRepository:
     async def test_add_to_match_queue(self, repo, mock_redis):
         """加入匹配队列"""
         await repo.add_to_match_queue("p1")
-        mock_redis.rpush.assert_called_once_with("game:match_queue", "p1")
+        mock_redis.lrem.assert_called_once_with("game:match_queue:10", 0, "p1")
+        mock_redis.rpush.assert_called_once_with("game:match_queue:10", "p1")
+
+    @pytest.mark.asyncio
+    async def test_add_to_match_queue_deduplicates_player_before_append(self, repo, mock_redis):
+        await repo.add_to_match_queue("p1", base_score=80)
+        mock_redis.lrem.assert_called_once_with("game:match_queue:80", 0, "p1")
+        mock_redis.rpush.assert_called_once_with("game:match_queue:80", "p1")
 
     @pytest.mark.asyncio
     async def test_remove_from_match_queue(self, repo, mock_redis):
         """从匹配队列移除"""
         await repo.remove_from_match_queue("p1")
-        mock_redis.lrem.assert_called_once_with("game:match_queue", 1, "p1")
+        mock_redis.lrem.assert_called_once_with("game:match_queue:10", 1, "p1")

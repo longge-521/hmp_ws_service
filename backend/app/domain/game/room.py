@@ -64,6 +64,8 @@ class GameRoom:
         self._call_index: int = 0       # 当前叫地主的玩家索引
         self._call_scores: Dict[str, int] = {}  # 每个玩家的叫分 (0=不叫)
         self._first_caller_index: int = 0  # 首位叫牌者索引
+        self._call_round: int = 1        # 当前圈数 (1=第一圈, 2=第二圈)
+        self._first_bidder: Optional[str] = None  # 首位叫地主的玩家 ID
 
     @classmethod
     def create(cls, room_id: str, players: List[Player], base_score: int = 10) -> "GameRoom":
@@ -99,6 +101,8 @@ class GameRoom:
         self.play_history = []
         self._call_index = 0
         self._call_scores = {}
+        self._call_round = 1
+        self._first_bidder = None
         # 随机选择首位叫牌者 (使用第一个玩家索引)
         import random
         self._first_caller_index = random.randint(0, 2)
@@ -117,59 +121,96 @@ class GameRoom:
             return {"success": False, "error": "不是你的回合"}
         if score < 1 or score > 3:
             return {"success": False, "error": "叫分必须在1~3之间"}
-        # 叫分必须高于已有最高分
-        current_max = max(self._call_scores.values()) if self._call_scores else 0
-        if score <= current_max:
-            return {"success": False, "error": f"叫分必须高于当前最高分 {current_max}"}
 
-        self._call_scores[player_id] = score
-        self.multiplier = score
+        if self._call_round == 1:
+            # 叫分必须高于已有最高分
+            current_max = max(self._call_scores.values()) if self._call_scores else 0
+            if score <= current_max:
+                return {"success": False, "error": f"叫分必须高于当前最高分 {current_max}"}
 
-        # 叫3分直接成为地主
-        if score == 3:
+            self._call_scores[player_id] = score
+            self.multiplier = score
+
+            if self._first_bidder is None:
+                self._first_bidder = player_id
+
+            # 第一圈叫3分直接成为地主
+            if score == 3:
+                return self._set_landlord(player_id)
+
+            # 继续轮转
+            return self._advance_call()
+        else:
+            # 第二圈抢地主
+            if player_id != self._first_bidder:
+                return {"success": False, "error": "非首位叫地主玩家在第二圈不能抢地主"}
+
+            self._call_scores[player_id] = score
+            self.multiplier *= 2
             return self._set_landlord(player_id)
 
-        # 继续轮转
-        return self._advance_call()
-
     def skip_call(self, player_id: str) -> dict:
-        """玩家不叫"""
+        """玩家不叫/不抢"""
         if self.phase != GamePhase.CALLING:
             return {"success": False, "error": "当前不在叫地主阶段"}
         if player_id != self.current_turn:
             return {"success": False, "error": "不是你的回合"}
 
-        self._call_scores[player_id] = 0
-        return self._advance_call()
+        if self._call_round == 1:
+            self._call_scores[player_id] = 0
+            return self._advance_call()
+        else:
+            # 第二圈不抢
+            if player_id != self._first_bidder:
+                return {"success": False, "error": "非首位叫地主玩家在第二圈不能选择不抢"}
+
+            self._call_scores[player_id] = 0
+            # 找到第一圈除了首叫者之外叫分最高的玩家
+            candidates = {pid: s for pid, s in self._call_scores.items() if pid != self._first_bidder and s > 0}
+            if not candidates:
+                winner = self._first_bidder
+            else:
+                winner = max(candidates, key=candidates.get)
+            return self._set_landlord(winner)
 
     def _advance_call(self) -> dict:
         """推进叫地主流程"""
         ids = self._player_ids()
-        # 检查是否所有人都叫过了
-        if len(self._call_scores) >= 3:
-            # 找到最高分的玩家
-            max_score = max(self._call_scores.values())
-            if max_score == 0:
-                # 所有人都不叫，重新发牌
-                self.redeal_count += 1
-                if self.redeal_count >= self.MAX_REDEAL:
-                    # 超过重发次数，随机指定地主
-                    import random
-                    forced = random.choice(ids)
-                    self.multiplier = 1
-                    return self._set_landlord(forced)
-                self.phase = GamePhase.DEALING
-                return {"success": True, "redeal": True}
-
-            # 最高分者成为地主
-            winner = [pid for pid, s in self._call_scores.items() if s == max_score][0]
-            return self._set_landlord(winner)
-
-        # 还有人没叫，轮到下一个
-        self._call_index = (self._call_index + 1) % 3
-        self.current_turn = ids[self._call_index]
-        self.turn_deadline = time.time() + 15
-        return {"success": True, "next_caller": self.current_turn}
+        
+        if self._call_round == 1:
+            # 检查是否所有人都叫过了（即第一圈是否结束）
+            if len(self._call_scores) >= 3:
+                called_players = [pid for pid, s in self._call_scores.items() if s > 0]
+                
+                if len(called_players) == 0:
+                    # 所有人都不叫，重新发牌
+                    self.redeal_count += 1
+                    if self.redeal_count >= self.MAX_REDEAL:
+                        # 超过重发次数，随机指定地主
+                        import random
+                        forced = random.choice(ids)
+                        self.multiplier = 1
+                        return self._set_landlord(forced)
+                    self.phase = GamePhase.DEALING
+                    return {"success": True, "redeal": True}
+                
+                elif len(called_players) == 1:
+                    # 只有 1 人叫分，直接成为地主
+                    return self._set_landlord(called_players[0])
+                
+                else:
+                    # 有 2 人或 3 人叫分，进入第二圈抢地主，轮到首叫者表态
+                    self._call_round = 2
+                    self.current_turn = self._first_bidder
+                    self._call_index = ids.index(self._first_bidder)
+                    self.turn_deadline = time.time() + 15
+                    return {"success": True, "next_caller": self.current_turn, "call_round": 2}
+            
+            # 第一圈还没结束，轮到下一个
+            self._call_index = (self._call_index + 1) % 3
+            self.current_turn = ids[self._call_index]
+            self.turn_deadline = time.time() + 15
+            return {"success": True, "next_caller": self.current_turn}
 
     def _set_landlord(self, player_id: str) -> dict:
         """确定地主，分配底牌，进入出牌阶段"""
@@ -178,7 +219,7 @@ class GameRoom:
         self.hands[player_id] = sort_cards(self.hands[player_id] + self.bottom_cards)
         self.phase = GamePhase.PLAYING
         self.current_turn = player_id  # 地主先出
-        self.turn_deadline = time.time() + 20
+        self.turn_deadline = time.time() + 15
         self.last_play = LastPlay()
         self.pass_count = 0
         return {
@@ -243,7 +284,7 @@ class GameRoom:
 
         # 轮到下一个玩家
         self.current_turn = self._next_player(player_id)
-        self.turn_deadline = time.time() + 20
+        self.turn_deadline = time.time() + 15
         return {
             "success": True,
             "cards_played": card_ids,
@@ -271,11 +312,11 @@ class GameRoom:
             self.current_turn = self.last_play.player
             self.last_play = LastPlay()  # 清空上家，新一轮
             self.pass_count = 0
-            self.turn_deadline = time.time() + 20
+            self.turn_deadline = time.time() + 15
             return {"success": True, "new_round": True, "next_turn": self.current_turn}
 
         self.current_turn = self._next_player(player_id)
-        self.turn_deadline = time.time() + 20
+        self.turn_deadline = time.time() + 15
         return {"success": True, "next_turn": self.current_turn}
 
     # ── 结算 ──
@@ -333,6 +374,8 @@ class GameRoom:
             "call_index": self._call_index,
             "call_scores": self._call_scores,
             "first_caller_index": self._first_caller_index,
+            "call_round": self._call_round,
+            "first_bidder": self._first_bidder,
             "base_score": self.base_score,
             "all_played_cards": self.all_played_cards,
             "play_history": self.play_history,
@@ -369,6 +412,8 @@ class GameRoom:
         room._call_index = data.get("call_index", 0)
         room._call_scores = data.get("call_scores", {})
         room._first_caller_index = data.get("first_caller_index", 0)
+        room._call_round = data.get("call_round", 1)
+        room._first_bidder = data.get("first_bidder")
         room.base_score = data.get("base_score", 10)
         room.all_played_cards = data.get("all_played_cards", [])
         room.play_history = data.get("play_history", [])
@@ -400,6 +445,9 @@ class GameRoom:
                 "card_type": self.last_play.card_type,
             },
             "multiplier": self.multiplier,
+            "call_round": self._call_round,
+            "call_scores": dict(self._call_scores),
+            "first_bidder": self._first_bidder,
             "landlord": self.landlord,
             "base_score": self.base_score,
             "all_played_cards": self.all_played_cards,

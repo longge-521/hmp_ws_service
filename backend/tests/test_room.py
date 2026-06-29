@@ -96,3 +96,68 @@ class TestGameRoom:
             if p["id"] != "p1":
                 assert "hand" not in p  # 不应有其他人手牌
                 assert "remaining" in p  # 应有剩余牌数
+        assert "call_scores" in view
+        assert "first_bidder" in view
+
+    def test_single_bidder_becomes_landlord(self):
+        """只有1人叫分，该人直接成为地主"""
+        room = GameRoom.create("room_1", make_players())
+        room.deal()
+        
+        # 让第一个人叫 1 分，其他人不叫
+        p1 = room.current_turn
+        room.call_landlord(p1, 1)
+        
+        p2 = room.current_turn
+        room.skip_call(p2)
+        
+        p3 = room.current_turn
+        result = room.skip_call(p3)
+        
+        assert room.phase == GamePhase.PLAYING
+        assert room.landlord == p1
+        assert room.multiplier == 1
+
+    def test_two_round_bidding_flow(self):
+        """两圈抢地主流：首叫者叫1，下家抢2，下下家不抢，第二圈首叫者抢则成为地主且倍数翻倍"""
+        room = GameRoom.create("room_1", make_players())
+        room.deal()
+        ids = [p.id for p in room.players]
+        room._first_caller_index = 0
+        room._call_index = 0
+        room.current_turn = ids[0]
+        
+        # 第一圈：
+        room.call_landlord(ids[0], 1)
+        room.call_landlord(ids[1], 2)
+        room.skip_call(ids[2])
+        
+        # 此时应该进入第二圈，轮到首叫者 ids[0]
+        assert room._call_round == 2
+        assert room.current_turn == ids[0]
+        
+        # 首叫者 ids[0] 选择抢，直接成为地主且 multiplier 翻倍 (2 * 2 = 4)
+        result = room.call_landlord(ids[0], 3)
+        assert room.phase == GamePhase.PLAYING
+        assert room.landlord == ids[0]
+        assert room.multiplier == 4
+
+    def test_two_round_bidding_skip(self):
+        """两圈抢地主流：首叫者不抢，则最高分者成为地主"""
+        room = GameRoom.create("room_1", make_players())
+        room.deal()
+        ids = [p.id for p in room.players]
+        room._first_caller_index = 0
+        room._call_index = 0
+        room.current_turn = ids[0]
+        
+        # 第一圈：
+        room.call_landlord(ids[0], 1)
+        room.call_landlord(ids[1], 2)
+        room.skip_call(ids[2])
+        
+        # 第二圈首叫者 ids[0] 不抢 -> ids[1] (叫2分的) 成为地主
+        room.skip_call(ids[0])
+        assert room.phase == GamePhase.PLAYING
+        assert room.landlord == ids[1]
+        assert room.multiplier == 2

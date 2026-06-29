@@ -54,7 +54,20 @@ class PlayerProfileORM(Base):
     beans = Column(Integer, default=10000, nullable=False, comment="欢乐豆")
     total_games = Column(Integer, default=0, nullable=False, comment="总对局数")
     wins = Column(Integer, default=0, nullable=False, comment="胜场数")
+    rank_id = Column(Integer, default=1, nullable=False, comment="大级别(1-36)")
+    sub_rank = Column(Integer, default=4, nullable=False, comment="子级别(1-4，对应I-IV)")
+    stars = Column(Integer, default=0, nullable=False, comment="当前小段位星星数")
     created_at = Column(DateTime, default=datetime.datetime.now, comment="创建时间")
+
+
+class UserORM(Base):
+    __tablename__ = "user_account"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True, comment="主键ID")
+    username = Column(String(100), nullable=False, unique=True, index=True, comment="账号")
+    password = Column(String(255), nullable=False, comment="密码")
+    player_id = Column(String(100), nullable=False, unique=True, index=True, comment="关联的Player ID")
+    created_at = Column(DateTime, default=datetime.datetime.now, comment="创建时间")
+
 
 
 class GameRecordORM(Base):
