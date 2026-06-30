@@ -12,6 +12,8 @@ interface UseRoomVoiceChatOptions {
   sendAction: (payload: Record<string, unknown>) => void
 }
 
+type VoiceSignalPayload = Record<string, unknown> | RTCSessionDescriptionInit | RTCIceCandidateInit
+
 const rtcConfig: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 }
@@ -32,13 +34,13 @@ export function useRoomVoiceChat(options: UseRoomVoiceChatOptions) {
   function sendSignal(
     targetPlayer: string,
     signalType: VoiceSignalType,
-    payload: Record<string, unknown>,
+    payload: VoiceSignalPayload,
   ) {
     options.sendAction({
       action: 'voice_signal',
       target_player: targetPlayer,
       signal_type: signalType,
-      payload,
+      payload: payload as Record<string, unknown>,
     })
   }
 
@@ -226,7 +228,7 @@ export function useRoomVoiceChat(options: UseRoomVoiceChatOptions) {
     const peer = createPeer(event.player)
 
     if (event.signalType === 'offer') {
-      const description = event.payload as RTCSessionDescriptionInit
+      const description = event.payload as unknown as RTCSessionDescriptionInit
       const offerCollision =
         makingOffer.get(event.player) === true || peer.signalingState !== 'stable'
 
@@ -249,13 +251,13 @@ export function useRoomVoiceChat(options: UseRoomVoiceChatOptions) {
     }
 
     if (event.signalType === 'answer') {
-      await peer.setRemoteDescription(new RTCSessionDescription(event.payload as RTCSessionDescriptionInit))
+      await peer.setRemoteDescription(new RTCSessionDescription(event.payload as unknown as RTCSessionDescriptionInit))
       await flushPendingIceCandidates(event.player, peer)
       return
     }
 
     if (event.signalType === 'ice_candidate') {
-      const candidate = event.payload as RTCIceCandidateInit
+      const candidate = event.payload as unknown as RTCIceCandidateInit
       if (!peer.remoteDescription) {
         queueIceCandidate(event.player, candidate)
         return

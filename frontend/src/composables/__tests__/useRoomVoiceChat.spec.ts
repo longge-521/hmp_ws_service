@@ -71,6 +71,8 @@ class MockPeerConnection {
   })
 }
 
+type SendAction = (payload: Record<string, unknown>) => void
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -100,14 +102,16 @@ async function loadVoiceModules() {
 
 describe('useRoomVoiceChat', () => {
   let stream: MockMediaStream
-  let sendAction: ReturnType<typeof vi.fn>
+  let sendAction: SendAction
+  let sendActionMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.resetModules()
     vi.unstubAllGlobals()
     document.body.innerHTML = ''
     stream = new MockMediaStream()
-    sendAction = vi.fn()
+    sendActionMock = vi.fn()
+    sendAction = sendActionMock as SendAction
     MockPeerConnection.instances = []
     MockPeerConnection.createOfferImplementation = async () =>
       ({ type: 'offer', sdp: 'offer-sdp' }) as RTCSessionDescriptionInit
@@ -122,7 +126,7 @@ describe('useRoomVoiceChat', () => {
     })
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
     Object.defineProperty(globalThis.navigator, 'mediaDevices', {
-      value: { getUserMedia: vi.fn(async () => stream) },
+      value: { getUserMedia: vi.fn(async () => stream as unknown as MediaStream) },
       configurable: true,
     })
   })
@@ -279,7 +283,7 @@ describe('useRoomVoiceChat', () => {
 
     await voice.startVoice()
     const remoteStream = new MockMediaStream() as unknown as MediaStream
-    MockPeerConnection.instances[0]!.ontrack?.({ streams: [remoteStream] } as RTCTrackEvent)
+    MockPeerConnection.instances[0]!.ontrack?.({ streams: [remoteStream] } as unknown as RTCTrackEvent)
 
     expect(document.getElementById('voice-audio-p2')).not.toBeNull()
     expect(voice.remoteVoicePlayers.value.p2).toBe(true)
@@ -292,7 +296,7 @@ describe('useRoomVoiceChat', () => {
   })
 
   it('ignores late getUserMedia completion after stop', async () => {
-    const deferredStream = createDeferred<MockMediaStream>()
+    const deferredStream = createDeferred<MediaStream>()
     vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementationOnce(() => deferredStream.promise)
     const { useRoomVoiceChat } = await loadVoiceModules()
     const voice = useRoomVoiceChat({
@@ -303,7 +307,7 @@ describe('useRoomVoiceChat', () => {
 
     const startPromise = voice.startVoice()
     voice.stopVoice()
-    deferredStream.resolve(stream)
+    deferredStream.resolve(stream as unknown as MediaStream)
     await startPromise
 
     expect(voice.isVoiceEnabled.value).toBe(false)
@@ -388,7 +392,7 @@ describe('useRoomVoiceChat', () => {
       ),
     ).toBe(false)
     expect(
-      sendAction.mock.calls.some(
+      sendActionMock.mock.calls.some(
         ([payload]) =>
           payload.action === 'voice_signal'
           && payload.target_player === 'p1'
@@ -437,7 +441,7 @@ describe('useRoomVoiceChat', () => {
     })
 
     await voice.startVoice()
-    const actionsBeforeDispose = sendAction.mock.calls.length
+    const actionsBeforeDispose = sendActionMock.mock.calls.length
 
     voice.dispose()
     notifyVoiceState({ player: 'p2', enabled: true })
@@ -452,7 +456,7 @@ describe('useRoomVoiceChat', () => {
     expect(stream.tracks[0]!.stop).toHaveBeenCalled()
     expect(MockPeerConnection.instances[0]!.close).toHaveBeenCalled()
     expect(sendAction).toHaveBeenLastCalledWith({ action: 'voice_state', enabled: false })
-    expect(sendAction.mock.calls).toHaveLength(actionsBeforeDispose + 1)
+    expect(sendActionMock.mock.calls).toHaveLength(actionsBeforeDispose + 1)
     expect(voice.remoteVoicePlayers.value).toEqual({})
   })
 
