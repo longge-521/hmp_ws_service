@@ -14,8 +14,10 @@ const gameStore = useGameStore()
 const { connect, disconnect, sendAction } = useGameWebSocket()
 const { playSound, startBgm, stopBgm, unlock: unlockAudio } = useSoundEngine()
 
+const isMockMode = new URLSearchParams(window.location.search).get('mock') === 'true'
+
 // 校验登录状态
-if (!playerStore.playerId || !playerStore.nickname) {
+if (!isMockMode && (!playerStore.playerId || !playerStore.nickname)) {
   router.push('/login')
 }
 
@@ -251,10 +253,30 @@ watch(() => gameStore.wsConnected, (connected) => {
 
 onMounted(() => {
   unlockAudio()
-  startBgm('lobby')
-  loadLobbyData()
-  // 连接 WebSocket，如果是断线重连，会自动收到 reconnected 事件并触发上面的 watch 跳转
-  connect()
+  if (isMockMode) {
+    playerStore.playerId = 'mock_player'
+    playerStore.nickname = '雀圣斗地王'
+    playerStore.username = 'mock_user'
+    playerStore.beans = 9999999
+    playerStore.rankTitle = '至尊斗皇III'
+    playerStore.totalGames = 2048
+    playerStore.winRate = 72.8
+    playerStore.stars = 4
+    playerStore.subRank = 1
+    
+    leaderboard.value = [
+      { player_id: 'mock_player', nickname: '雀圣斗地王', beans: 9999999, rank_title: '至尊斗皇III', win_rate: 72.8, total_games: 2048 },
+      { player_id: 'p2', nickname: '发牌大户', beans: 5880000, rank_title: '至尊斗皇I', win_rate: 65.4, total_games: 1500 },
+      { player_id: 'p3', nickname: '农民专业户', beans: 3200000, rank_title: '傲世斗王IV', win_rate: 58.2, total_games: 890 },
+      { player_id: 'p4', nickname: '明牌炸弹人', beans: 1200000, rank_title: '傲世斗王I', win_rate: 61.0, total_games: 450 },
+      { player_id: 'p5', nickname: '小王在此', beans: 980000, rank_title: '强力斗魂V', win_rate: 51.5, total_games: 300 }
+    ]
+  } else {
+    startBgm('lobby')
+    loadLobbyData()
+    // 连接 WebSocket，如果是断线重连，会自动收到 reconnected 事件并触发上面的 watch 跳转
+    connect()
+  }
 })
 
 onUnmounted(() => {

@@ -35,8 +35,39 @@ const showSettings = ref(false)
 const soundSettings = ref(getSettings())
 function refreshSoundSettings() { soundSettings.value = getSettings() }
 
+const isMockMode = new URLSearchParams(window.location.search).get('mock') === 'true'
+
+if (isMockMode) {
+  // Setup 级别的 Mock 注入
+  playerStore.playerId = 'mock_player'
+  playerStore.nickname = '雀圣斗地王'
+  playerStore.username = 'mock_user'
+  playerStore.beans = 9999999
+  playerStore.rankTitle = '至尊斗皇III'
+
+  gameStore.roomId = 'mock_room_888'
+  gameStore.gamePhase = 'PLAYING'
+  gameStore.baseScore = 300
+  gameStore.multiplier = 64
+  gameStore.landlord = 'mock_player'
+  gameStore.currentTurn = 'mock_player'
+  gameStore.wsConnected = true
+  gameStore.bottomCards = [51, 47, 43]
+  gameStore.players = [
+    { id: 'mock_player', nickname: '雀圣斗地王', isAi: false, isOnline: true, remaining: 20, isLandlord: true, isSelf: true },
+    { id: 'ai_left', nickname: '发牌大户 (AI)', isAi: true, isOnline: true, remaining: 17, isLandlord: false, isSelf: false },
+    { id: 'ai_right', nickname: '明牌炸弹 (AI)', isAi: true, isOnline: true, remaining: 17, isLandlord: false, isSelf: false }
+  ]
+  gameStore.myHand = [53, 52, 50, 49, 48, 46, 45, 44, 42, 41, 40, 38, 37, 36, 34, 33, 32, 30, 29, 28]
+  gameStore.lastPlay = {
+    player: 'ai_right',
+    cards: [1],
+    cardType: 'single'
+  }
+}
+
 // 校验登录状态
-if (!playerStore.playerId || !playerStore.nickname) {
+if (!isMockMode && (!playerStore.playerId || !playerStore.nickname)) {
   router.push('/login')
 }
 
@@ -256,6 +287,10 @@ const discardCounts = computed(() => {
 
 onMounted(() => {
   unlockAudio()
+
+  if (isMockMode) {
+    return
+  }
 
   if (!gameStore.wsConnected) {
     connect()
